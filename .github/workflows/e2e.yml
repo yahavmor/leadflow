@@ -1,0 +1,63 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      update_screenshots:
+        description: Commit the new screenshots to docs/
+        type: boolean
+        default: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - name: Install and build
+        run: |
+          npm ci --prefix backend --omit=dev
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+          npm ci --prefix e2e
+      - name: Install Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Start LeadFlow in demo mode
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          DEMO_MODE: 'true'
+          JWT_SECRET: e2e-only-secret
+          PORT: 3030
+        run: |
+          node server.js > ../server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3030/api/health && exit 0; sleep 1; done
+          cat ../server.log; exit 1
+      - name: Run the end-to-end flow
+        run: npm test --prefix e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: |
+            docs/*.png
+            server.log
+      - name: Commit the screenshots
+        if: github.event_name == 'workflow_dispatch' && inputs.update_screenshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add docs/*.png
+          git diff --cached --quiet || { git commit -m "docs: update screenshots from the E2E run"; git push; }

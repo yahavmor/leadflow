@@ -1,0 +1,22 @@
+# Render Blueprint: one web service that serves the API, the WebSocket and the React build.
+services:
+  - type: web
+    name: leadflow
+    runtime: node
+    plan: free
+    buildCommand: cd frontend && npm ci && npm run build && cd ../backend && npm ci --omit=dev
+    startCommand: cd backend && node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URL
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: DEMO_MODE
+        value: "true"
